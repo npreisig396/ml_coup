@@ -1,5 +1,8 @@
 import random
 from .utils import State
+import torch
+import torch.nn as nn
+import torch.optim as optim
 
 class Terminal:
     def __init__(self,verbose=True,rand=False):
@@ -136,6 +139,7 @@ class Blank:
 class Heuristic:
     def __init__(self,verbose=False,random=False):
         self.v = verbose
+        self.wins = 0
 
     def get_action(self,state):
         return state.get_actions()[random.randint(0,len(state.get_actions())-1)]
@@ -167,7 +171,9 @@ class Heuristic:
         return state.get_card_idx()[random.randint(0,len(state.get_card_idx())-1)]
 
     def close(self,state):
-        pass
+        if state:
+            self.wins += 1
+
 class Scripted:
     def __init__(self,script):
         self.script = script
@@ -195,3 +201,61 @@ class Scripted:
 
     def close(self,state):
         pass
+
+class Smart:
+    def __init__(self,idx):
+        self.action = nn.Sequential(nn.Linear(19,32),nn.ReLU(),nn.Linear(32,7),nn.Softmax(dim=0))
+        self.action.load_state_dict(torch.load(f'models/action_only/model_{idx}.pth'))
+        self.action_optimizer = optim.Adam(self.action.parameters(), lr = 0.01)
+        self.mapping = {'Ambassador':0,'Assassin':1,'Captain':2,'Contessa':3,'Duke':4}
+        self.choices = []
+        self.wins = 0
+        self.id = idx
+
+    def get_action(self,state):
+        x = torch.zeros(10 + 4 + 4 + 1)
+        x[self.mapping[state.my_cards[0]]] = 1
+        if len(state.my_cards) == 2:
+            x[5+self.mapping[state.my_cards[1]]] = 1
+        for i in range(4):
+            x[10+i] = state.coins[i]
+            x[14+i] = state.cards[i]
+        x[18] = state.idx
+        y = self.action(x)
+    
+        a = y[state.get_actions()].argmax()
+        self.choices.append(y[a])
+        return a
+
+    def get_target(self,state):
+        return state.get_targets()[random.randint(0,len(state.get_targets())-1)]
+
+    def lose_influence(self,state):
+        return state.get_card_idx()[random.randint(0,len(state.get_card_idx())-1)]
+
+    def get_challenge(self,state):
+        return random.randint(0,1)
+
+    def get_block(self,state,card):
+        return random.randint(0,1)
+
+    def reveal_card(self,state):
+        return state.get_card_idx()[random.randint(0,len(state.get_card_idx())-1)]
+
+    def replace_card(self,state):
+        return state.get_card_idx()[random.randint(0,len(state.get_card_idx())-1)]
+
+    def close(self,state):
+        self.action_optimizer.zero_grad()
+        self.wins += 1 if state else 0
+        reward = 1 if state else -1
+        loss = 0
+        for i in range(len(self.choices)):
+            loss -= self.choices[-1-i] * reward
+            reward *= .9
+        if loss:
+            loss.backward()
+        self.action_optimizer.step()
+        self.choices = []
+
+        # torch.save(self.action.state_dict(),f'model_{self.id}.pth')
