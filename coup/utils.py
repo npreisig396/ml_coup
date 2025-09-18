@@ -9,13 +9,14 @@ class Player:
         return '[' + str(self.cards) + ',' + str(self.coins) + ']'
 
 class State:
-    def __init__(self,game,idx,card=None):
+    def __init__(self,game,idx,action=None,actioner=None):
         self.idx = idx
         self.my_coins = game.players[idx].coins
         self.my_cards = game.players[idx].cards
         self.coins = [player.coins for player in game.players]
         self.cards = [len(player.cards) for player in game.players]
-        self.should_reveal = card
+        self.action = action
+        self.actioner = actioner
 
     def get_actions(self):
         if self.my_coins < 3:
